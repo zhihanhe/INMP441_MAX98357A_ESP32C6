@@ -233,7 +233,10 @@ static void mic_test(void *arg)
     while (1) {
         ret = i2s_channel_read(rx_handle, use_buffer, DMA_BUF_SIZE, &bytes, 1000);
         if (ret == ESP_OK && bytes > 0) {
-            ESP_LOGI(TAG, "读取麦克风成功: %d 字节", bytes);
+            // ESP_LOGI(TAG, "读取麦克风成功: %d 字节", bytes);
+            for (int i = 0; i < bytes / 4; i++) {
+                ESP_LOGI(TAG, "> mic:%d", use_buffer[i]);
+            }
         } else {
             ESP_LOGE(TAG, "读取麦克风失败: %s", esp_err_to_name(ret));
         }
@@ -316,5 +319,6 @@ void app_main(void)
     ESP_LOGI("app_main", "初始化扬声器/麦克风完毕");
     xTaskCreate(mic_2_speaker, "mic_2_speaker", 4096 * 2, NULL, 5, NULL);
     // xTaskCreate(play_music, "play_music", 2048, NULL, 5, NULL);
+    // xTaskCreate(mic_test, "mic_test", 4096 * 2, NULL, 5, NULL);
 
 }
