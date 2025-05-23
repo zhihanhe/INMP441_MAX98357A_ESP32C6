@@ -49,7 +49,7 @@ GPIO_NUM_16 (TX)：适合数据传输，有发送功能支持
 查阅开发板引脚图上的标记（如 SCL、RX、TX 等）作为选择指南
 换用 17/23/16 是正确的选择，因为它们是 ESP32C6 上更适合 I2S 功能的引脚。
 
-ESP32C6:
+ESP32C6:试过了，没声音没。放弃
 // 扬声器的引脚
 #define MAX_LRC GPIO_NUM_17 // D7 (RX)
 #define MAX_BCLK GPIO_NUM_23 // D5 (SCL)
@@ -67,22 +67,41 @@ M5Stack ATOM S3R
 #define INMP_WS GPIO_NUM_7
 */
 
+// ESP32S3-N16R8
 #define MAX_LRC GPIO_NUM_16
 #define MAX_BCLK GPIO_NUM_15
 #define MAX_DIN GPIO_NUM_7
-
 // 麦克风的引脚
 #define INMP_SD GPIO_NUM_6
-#define INMP_SCK GPIO_NUM_5 // MAX_BCLK = INMP_SCK
-#define INMP_WS GPIO_NUM_4 // MAX_LRC = INMP_WS
+#define INMP_SCK MAX_BCLK //GPIO_NUM_5 // MAX_BCLK = INMP_SCK
+#define INMP_WS MAX_LRC//GPIO_NUM_4 // MAX_LRC = INMP_WS
+
+// // ESP32C6 xiao 不行
+// #define MAX_LRC GPIO_NUM_17 // D7 (RX)
+// #define MAX_BCLK GPIO_NUM_23 // D5 (SCL)
+// #define MAX_DIN GPIO_NUM_16 // D6 (TX)
+// // 麦克风的引脚
+// #define INMP_SD GPIO_NUM_21
+// #define INMP_SCK MAX_BCLK //GPIO_NUM_5 // MAX_BCLK = INMP_SCK
+// #define INMP_WS MAX_LRC//GPIO_NUM_4 // MAX_LRC = INMP_WS
+
+// // ESP32S3 xiao 竟然也不行
+// #define MAX_LRC GPIO_NUM_5
+// #define MAX_BCLK GPIO_NUM_6
+// #define MAX_DIN GPIO_NUM_43
+// // 麦克风的引脚
+// #define INMP_SD GPIO_NUM_4
+// #define INMP_SCK MAX_BCLK //GPIO_NUM_5 // MAX_BCLK = INMP_SCK
+// #define INMP_WS MAX_LRC//GPIO_NUM_4 // MAX_LRC = INMP_WS
 
 // 配置扬声器/麦克风的采样率
 #define SAMPLE_RATE 44100
 
 // i2s_common: dma frame num is out of dma buffer size, limited to 1023
-#define DMA_FRAME_NUM 1023
-#define SLOT_NUM I2S_SLOT_MODE_MONO // 单声道
-#define SLOT_BIT_WIDTH I2S_DATA_BIT_WIDTH_16BIT // 16bit
+#define DMA_FRAME_NUM 511
+// TODO 音乐是16bit，单声道。但是麦克风必须这么配置！要不没声音，或者全是杂音！
+#define SLOT_NUM I2S_SLOT_MODE_STEREO // 双声道
+#define SLOT_BIT_WIDTH I2S_DATA_BIT_WIDTH_32BIT // 16bit
 
 // https://docs.espressif.com/projects/esp-idf/zh_CN/stable/esp32/api-reference/peripherals/i2s.html#id13
 // 这里的一帧是指一个 WS 周期内的所有采样数据。因此， dma_buffer_size = dma_frame_num * slot_num * slot_bit_width / 8
@@ -100,7 +119,7 @@ extern const uint8_t music_pcm_end[]   asm("_binary_canon_pcm_end");
 // MAX98357A 扬声器 写数据 
 static void i2s_tx_init() {
     // 用 I2S1 作为主机（Master）初始化一个 I2S 通道，用于音频数据的发送（播放）。
-    i2s_chan_config_t tx_config = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
+    i2s_chan_config_t tx_config = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     tx_config.dma_frame_num = DMA_FRAME_NUM;
     
     // ⚠️
@@ -108,7 +127,7 @@ static void i2s_tx_init() {
 
     i2s_std_config_t tx_std_config = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
-        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, SLOT_NUM),
+        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(SLOT_BIT_WIDTH, SLOT_NUM),
         .gpio_cfg = {
             .mclk = I2S_GPIO_UNUSED,
             .din = I2S_GPIO_UNUSED,
@@ -131,17 +150,19 @@ static void i2s_tx_init() {
 // INMP441 麦克风 读数据
 static void i2s_rx_init() {
     // i2s_chan_config_t rx_config = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
-    i2s_chan_config_t rx_config = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    i2s_chan_config_t rx_config = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
 
     rx_config.dma_frame_num = DMA_FRAME_NUM;
 
     // ⚠️
     ESP_ERROR_CHECK(i2s_new_channel(&rx_config, NULL, &rx_handle));
     // ESP_ERROR_CHECK(i2s_new_channel(&rx_config, &tx_handle, &rx_handle));
-
+    i2s_std_slot_config_t rx_slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(SLOT_BIT_WIDTH, SLOT_NUM);
+    // 不加听不到人声
+    rx_slot_cfg.bit_shift = true; // 使能位移
     i2s_std_config_t rx_std_config = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
-        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, SLOT_NUM),
+        .slot_cfg = rx_slot_cfg, //I2S_STD_MSB_SLOT_DEFAULT_CONFIG(SLOT_BIT_WIDTH, SLOT_NUM),
         .gpio_cfg = {
             .mclk = I2S_GPIO_UNUSED,
             // ⚠️
@@ -173,7 +194,6 @@ static void mic_2_speaker(void *arg)
         esp_err_t read_ret = i2s_channel_read(rx_handle, use_buffer, DMA_BUF_SIZE, &bytes, 1000);
         
         if(read_ret == ESP_OK && bytes > 0) {
-            
             esp_err_t write_ret = i2s_channel_write(tx_handle, use_buffer, DMA_BUF_SIZE, &bytes, 1000);
             if (write_ret != ESP_OK) {
                 ESP_LOGE(TAG, "写入扬声器失败: %s", esp_err_to_name(write_ret));
@@ -233,10 +253,7 @@ static void mic_test(void *arg)
     while (1) {
         ret = i2s_channel_read(rx_handle, use_buffer, DMA_BUF_SIZE, &bytes, 1000);
         if (ret == ESP_OK && bytes > 0) {
-            // ESP_LOGI(TAG, "读取麦克风成功: %d 字节", bytes);
-            for (int i = 0; i < bytes / 4; i++) {
-                ESP_LOGI(TAG, "> mic:%d", use_buffer[i]);
-            }
+            ESP_LOGI(TAG, "读取麦克风成功: %d 字节", bytes);
         } else {
             ESP_LOGE(TAG, "读取麦克风失败: %s", esp_err_to_name(ret));
         }
@@ -252,14 +269,11 @@ void i2s_init() {
     
     // 同时创建TX和RX句柄
     ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &tx_handle, &rx_handle));
-
-    i2s_std_slot_config_t speaker_std_slot_config = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(SLOT_BIT_WIDTH, SLOT_NUM);
-    speaker_std_slot_config.bit_shift = true; // 使能位移
     
     // 扬声器配置 (TX)
     i2s_std_config_t tx_std_config = {
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
-        .slot_cfg = speaker_std_slot_config,
+        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(SLOT_BIT_WIDTH, SLOT_NUM),
         .gpio_cfg = {
             .mclk = I2S_GPIO_UNUSED,
             .din = I2S_GPIO_UNUSED,
@@ -307,18 +321,23 @@ void i2s_init() {
 
 void app_main(void)
 {
-    ESP_LOGI("app_main", "进入程序");
-    // // 音频输出（播放）
+    // ESP_LOGI("app_main", "进入程序");
+    // // // 音频输出（播放）
     // i2s_tx_init();
     // ESP_LOGI("app_main", "初始化扬声器完毕");
     // // 音频输入（录音）
     // i2s_rx_init();
     // ESP_LOGI("app_main", "初始化麦克风完毕");
-    // // xTaskCreate(mic_test, "mic_test", 4096, NULL, 5, NULL);
+    // xTaskCreate(mic_test, "mic_test", 4096, NULL, 5, NULL);
     i2s_init();
-    ESP_LOGI("app_main", "初始化扬声器/麦克风完毕");
-    xTaskCreate(mic_2_speaker, "mic_2_speaker", 4096 * 2, NULL, 5, NULL);
-    // xTaskCreate(play_music, "play_music", 2048, NULL, 5, NULL);
-    // xTaskCreate(mic_test, "mic_test", 4096 * 2, NULL, 5, NULL);
+    // ESP_LOGI("app_main", "初始化扬声器/麦克风完毕");
+    xTaskCreate(mic_2_speaker, "mic_2_speaker", 4096, NULL, 5, NULL);
+    //xTaskCreate(play_music, "play_music", 2048, NULL, 5, NULL);
 
+
+    // ESP_LOGI("app_main", "进入程序");
+    // i2s_init();
+    // ESP_LOGI("app_main", "初始化麦克风/扬声器完毕");
+    // // xTaskCreate(mic_2_speaker, "mic_2_speaker", 2048, NULL, 5, NULL);
+    // xTaskCreate(play_music, "play_music", 2048, NULL, 5, NULL);
 }
